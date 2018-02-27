@@ -1,0 +1,74 @@
+# NAME:
+#   PongPlayer.sm - state machine for playing pong
+#
+# SYNOPSIS:
+#   fgen.pl PongPlayer.sm
+#
+# DESCRIPTION:
+#   This file describes an example state machine for playing
+#   pong.
+#
+#   Running fgen on this file will create the C++ class implementing 
+#   the state machine.
+#
+# SEE ALSO: fgen
+#
+# TYPE: SPECIFICATION
+#########################################################################
+
+CFG Pong Player State Machine
+   DEBUG            1
+   DRIVERS          lngen.pl
+   INC              "Project/LnTypes.h"
+   INC              "Util/LnObject.h"
+   TIMER_INC        "TimerUtil/LnTaTimer.h"
+   TIMER_CLASS      LnTaTimer
+
+
+SM PongPlayerSm
+   START            IDLE
+   IS_MODULE        1
+   IS_PROTECT       1
+   DOC PongPlayerSm is a state machine for playing a simple Pong game.
+   METHOD virtual int,    GetMaxGameLength()
+   ON_ARGS VolleyArrived ARGS LnObject* pMsg
+   DO_ARGS ReturnVolley  ARGS LnObject* pMsg
+   ON_DOC GameLengthTimerFire  If the timer fires then the game ends.  
+   ON_DOC HomeMissedBall  The other player put the ball where we couldn't get it. 
+   ON_DOC AwayMissedBall  We put the ball where the opponent couldn't get it.
+   ON_DOC VolleyArrived  They hit the ball to us, so we must hit it back.   
+   ON_DOC StartGame Means this player was selected to start the game.
+   DO_DOC IdleExit Just an example of an exit method for a state.
+   DO_DOC CalcServeLocation Calculates where the player should serve to.
+   DO_DOC ReturnVolley Hit a volley back to the other player.
+   DO_DOC Nothing   A placeholder action. It does nothing.
+   DO_DOC ServerBall Server the ball to the other player.
+   DO_DOC GetMaxGameLength Return in milliseconds the max time a game can last.
+
+IN IDLE     
+   DOC We are just waiting for somewhat to hit to us or tell us to start.    \
+       The game is timed to last a max amount of time.
+   ON_ENTRY                                                                  \
+      DO Nothing TIMED_BY GameLengthTimer PERIOD GetMaxGameLength   
+   ON_EXIT                                                                   \
+      DO IdleExit
+   NEXT RETURN_BALL   ON StartGame                                           \
+	  DO CalcServeLocation,                                                  \
+      DO ServeBall
+   NEXT RETURN_BALL   ON VolleyArrived                                       \
+      DO ReturnVolley
+   NEXT IDLE        ON HomeMissedBall                                        \
+      DO  EndGame
+
+IN RETURN_BALL
+   DOC This state is where the game is played.                               
+   NEXT IDLE        ON GameLengthTimerFire                                   \
+      DO  EndGame
+   NEXT IDLE        ON HomeMissedBall                                        \
+      DO  EndGame
+   NEXT IDLE        ON AwayMissedBall                                        \
+      DO  EndGame
+   NEXT IDLE        ON HitFailed                                             \
+      DO  EndGame
+   NEXT RETURN_BALL ON VolleyArrived                                         \
+      DO ReturnVolley 

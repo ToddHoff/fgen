@@ -1,0 +1,452 @@
+<HTML>
+
+<HEAD>
+<TITLE> fgen internals </TITLE>
+</HEAD>
+<BODY BGCOLOR="skyblue">
+
+<CENTER>
+   <H1> fgen internals </H1>
+   <H2> Add Your Own Back-end Code Generators and Parsers </H2>
+</CENTER>
+
+<H2> Contents </H2>
+
+<OL>
+<LI> <A HREF="#intro">        Introduction </A>
+<LI> <A HREF="#driver">       Driver Interface </A>
+<LI> <A HREF="#pds">          Parser Data Structures </A>
+<LI> <A HREF="#bugs">         Bugs</A>
+</OL>
+
+
+<P><HR><A NAME="intro"></A>
+<H2> Introduction </H2>
+
+fgen was made with extensibility has a main goal. The same specification
+can have multiple code generaters so you can generate code for different
+environments/languages/purposes. The page describes all the different
+mechanisms that can be used to extend fgen.
+<P>
+
+<A NAME="driver"></A>
+<H2> Driver Interface </H2>
+
+<A NAME="didescr"></A>
+<H3> Description </H3>
+
+<I>fgen</I> allows for great flexibility:
+<UL>
+<LI> <A HREF="#smdep"> code generators </A> can be installed at run time.
+<LI> <A HREF="#pdep"> parsers </A> for existing or previously unknown
+     <A HREF="#bnf"><I>block types</I></A> can be installed at run time.
+</UL><P>
+
+Multiple projects can use the same system descriptions to generate different 
+target code. Target code may target different OSs, frameworks, or
+philosophies. New system descriptions can be dynamically added so projects
+can quickly generate code for important systems.
+<P>
+
+<A NAME="diprocess"></A>
+<H3> Process </H3>
+
+The following process is followed:
+<UL>
+<LI> All specification files passed on the <A HREF="#cli"> command line </A> 
+     are parsed and code is generated from the parsed specifications.
+<LI> Parsers are called for each <A HREF="#bnf"> block start keyword </A>.
+     Multiple parsers can be installed for the same block type.
+<LI> <I>fgen</I> has default parsers for messages and state machines.
+     The parsed systems are stored in <A HREF="#pds"> parser data structures </A>. 
+     Installed parsers must maintain their own data structures.
+<LI> <A HREF="#config"> Configurable attributes </A> are handled by <I>fgen</I>
+     and are not passed to parsers. These attributes are stored in parser
+     data structures.
+<LI> Every driver specified by the <A HREF="#driversattr">DRIVERS</A>
+     attribute directive is <B>required</B> into the perl program. Every
+     driver must be a <I>perl</I> <B>package</B>. See
+     <I>perl</I>'s man pages for information on <B>require</B>.
+<LI> When a package is <B>required</B> it's BEGIN section is automatically
+     called by <I>perl</I>. In the BEGIN section you must install 
+     its code generator driver and/or parser driver interface
+     into <I>fgen</I>.
+<LI> As blocks are encountered parsers are called to parse them.
+<LI> After the parsing phase has completed every code driver's 
+     <I>ACTION</I> function is executed allowing the driver to generate 
+     whatever code it desires.
+</UL>
+
+<A NAME="driverfiles"></A>
+<H3> Specifying Driver Files </H3>
+
+<I>fgen</I> supports drivers for code generation and parsing. Drivers
+are installed using the <A HREF="#config"> <I>DRIVERS</I> </A> configurable
+attribute. For example:
+
+<B><PRE><FONT SIZE=+1>
+CFG Example
+   DRIVERS testgen.pl, anothergen.pl
+</FONT></PRE></B><P>
+
+<A NAME="dep"></A>
+<H3> Driver Entry Points </H3>
+
+The driver interface is the same for both code generators and parsers. Drivers 
+are anonymous hashes with several named entry points. The entry points are called 
+by <I>fgen</I> at various times depending on the driver type.
+<P>
+
+<TABLE BORDER=1 WIDTH="100%">
+<TR>
+   <TD ALIGN=CENTER WIDTH="25%"> Entry Point/Variable </TD>
+   <TD ALIGN=CENTER WIDTH="75%"> Description   </TD>
+</TR>
+<TR>
+   <TD ALIGN=CENTER> NAME </TD>
+   <TD> Should contain the name of the driver.     </TD>
+</TR>
+<TR>
+   <TD ALIGN=CENTER> VERSION </TD>
+   <TD> Should contain the version of the driver.     </TD>
+</TR>
+<TR>
+   <TD ALIGN=CENTER> INIT </TD>
+   <TD> 
+      Reference to a function to intialize the driver. It's called before 
+      any other driver function.
+   </TD>
+</TR>
+<TR>
+   <TD ALIGN=CENTER> CLOSE </TD>
+   <TD> 
+      Reference to a function to close the driver. It's called 
+      after all other driver functions.
+   </TD>
+</TR>
+<TR>
+   <TD ALIGN=CENTER> ACTION </TD>
+   <TD> 
+      Reference to a function to perform the action of the driver.
+      <UL> 
+      <LI> Code <I>ACTION</I> Function <P>
+           The <I>ACTION</I> function of a code driver is called after all 
+           specifications have been parsed to generate code from the parsed 
+           specifications.<P>
+      <LI> Parser <I>ACTION</I> Function <P>          
+           The <I>ACTION</I> function of a parser driver is called when the 
+           block type associated with the driver is encountered. The following
+           areguments are passed to the parser function:
+           <UL>
+           <LI> <I>$type</I> - the type of the block
+           <LI> <I>$name</I> - the name associate witht he block
+           <LI> <I>$line</I> - the line containing the block start
+           <LI> <I>@block</I>- the block to parse
+           </UL>
+      </UL>
+      
+   </TD>
+</TR>
+<TR>
+   <TD ALIGN=CENTER> POST_ACTION </TD>
+   <TD> 
+      Reference to a function to perform after <I>ACTION</I> methods
+      have been called. It is always called before <I>CLOSE</I> methods are
+      called. The timing of the call depends on the driver type.
+      <I>POST_ACTION</I> is called directly after <I>ACTION</I> for
+      code drivers. <P>
+ 
+      For parser drivers <I>POST_ACTION</I> is called after <B>all</B> 
+      specifications have been  parsed and <B>before</I> the <I>ACTION</I>
+      method for all code drivers are called. This allows global operations on 
+      parse trees, operations requiring a complete parse tree, to be 
+      perfomed before the code generation phase. <P>
+
+      No arguments are passed to the called function. <P>
+</TR>
+</TABLE>
+<P>
+
+<A NAME="idrivers"></A>
+<H3> Installing Drivers </H3>
+
+Drivers are installed using two install functions, one for
+code drivers and one for parser drivers.
+<P>
+
+<A NAME="codedriver"></A>
+<H3> install_code_driver($driver) </H3>
+
+Installs a code driver.<P>
+An example <I>$driver</I> is defined <A HREF="#begin"> here </A>. <P>
+
+<A NAME="parserdriver"></A>
+<H3> install_parser_driver($block_type, $driver) </H3>
+
+Installs a parser driver.<P>
+
+<I>$block_type</I> is the type found in 
+the block start part of a block. For example: <I>IN</I> is used
+for states, <I>MSG</I> is used for messages, <I>CFG</I> is used for
+the configuration block. <P>
+
+An example <I>$driver</I> is defined <A HREF="#begin"> here </A>. <P>
+
+
+<A NAME="begin"></A>
+<H3> Example Begin Block </H3>
+
+Drivers are installed in the <I>BEGIN</I>
+section of package. A <I>BEGIN</I> statement allows packages to
+get control as they are <I>required</I> into <I>fgen</I>.
+
+<PRE>
+BEGIN
+{ 
+   $code_driver   = {};  # create anonymous hash for driver functions
+   $parser_driver = {};
+ 
+   $$code_driver{NAME}     = "Default State Machine Generator";
+   $$code_driver{VERSION}  = "1.0";
+   $$code_driver{ACTION}   = \&defgen::gen_sm_code;
+
+   $$parser_driver{NAME}   = "Default Message Parser";
+   $$parser_driver{VERSION}= "1.0";
+   $$parser_driver{ACTION} = \&defgen::parser_msg;
+
+   install_code_driver($code_driver);
+   install_parser_driver("MSG", $parser_driver);
+}
+
+package defgen;
+
+sun gen_sm_code
+{
+   read parser data structures and generate code
+}
+
+sun parser_msg
+{
+   my($type, $name, $line, @block)= @_;
+
+   parse the block and stick it in data structures
+}
+
+</FONT></PRE></B><P>
+
+
+<A NAME="pds"></A>
+<H2> Parser Data Structures </H2>
+
+What follows are the data structures used by the default parsers.
+All data structures are in the main package. Code drivers access data structures
+to generate code.
+<P>
+
+<A NAME="genpds"></A>
+<H3> General Data Structures </H3>
+
+<PRE>
+$::CFG{$attribute}        - configurable attributes
+</PRE><P>
+
+<A NAME="smpds"></A>
+<H4> State Machine Data Structures </H4>
+
+<PRE>
+$::SM_LIST{}           - associative array whos keys are the names 
+                         of all parsed state machines.
+
+<I>$sm</I> is the name of the state machine. There are entries
+per state machine.
+
+$::SMS{$sm}{NAME}      - name of the state machine.
+
+$::SMS{$sm}{START}     - start state for the state machine.
+
+$::SMS{$sm}{CASE_ERR}  - code used for default case of state transition.
+
+$::SMS{$sm}{INC}       - inlcude files to include in the state machine.
+
+$::SMS{$sm}{EVENT_LIST}{$on}   
+                       - keys are the events from the ON clause.
+
+$::SMS{$sm}{ACTION_LIST}{$do}  
+                       - keys are the list of actions to perform, 
+                         extracted from the DO statement.
+
+$::SMS{$sm}{TIMER_LIST}{$timer}
+                       - keys are a list of timers
+
+$::SMS{$sm}{TIMER_ACTION_LIST}{$do} 
+                       - keys are a list of Start and Stop 
+                         functions for the timers. Start timer 
+                         arguments default to the specified PERIOD.
+
+$::SMS{$sm}{PERIODS}{$timer}   
+                       - a table mapping a timer to its period.
+     {MSECS}            - milli-seconds fields of the period
+
+$::SMS{$sm}{STATE_LIST}{$state}
+                       - keys are the list of states for the state 
+                         machine.
+
+@{$::SMS{$sm}{STATES}{$state}} 
+                       - keys are all states. For every state is a 
+                        list of anonymous hashes of transitions. 
+
+Each transition has the following fields:
+
+$$transition{NEXT}     - the next state of the transition
+$$transition{FNEXT}    - the next state of the transition but indicates it's forced
+$$transition{ON}       - the event triggering the transition
+$$transition{DO}       - the do clause of the state
+$$transition{DO_LIST}  - the DO clause where each comma
+                         separated clause is broken up into
+                         a list entry. Use this for 
+                         generating code.
+</PRE><P>
+
+<A NAME="cfgepds"></A>
+<H3> Example Configuration Access</H3>
+
+<PRE>
+sub dump_cfg
+{
+   print "\nCONFIGURATION PARSE TREE:\n\n";
+
+   print "   INC: @INC\n";
+
+   print "\n   ATTRIBUTES:\n";
+   foreach $arg (keys %CFG)
+   {
+      print "      $arg:\t\t$CFG{$arg}\n";
+   }
+
+   print "\n   DRIVERS:\n";
+   foreach $driver (@ALL_DRIVERS)
+   {
+      print STDERR "      DRIVER=$$driver{NAME} VERSION=$$driver{VERSION}\n";
+   }
+
+}# dump_cfg
+</PRE><P>
+
+
+<A NAME="smepds"></A>
+<H3> Example State Machine Access </H3>
+
+<PRE>
+sub dump_sm
+{
+   print "\nSTATE MACHINE PARSE TREE:\n\n";
+
+   print "   SM LIST:\n";
+   foreach $sm (keys %SM_LIST)
+   {
+      print "      $sm\n";
+   }
+
+   foreach $sm (keys %SM_LIST)
+   {
+      print "\n";
+      dump_sm_entry($sm);
+      print "\n\n";
+   }
+
+}# dump_sm
+
+
+sub dump_sm_entry
+{
+   my($sm)= @_;
+
+   print "   SM: $SMS{$sm}{NAME}\n";
+   print "      NAME         : $SMS{$sm}{NAME}\n";
+   print "      START        : $SMS{$sm}{START}\n";
+   print "      CASE_ERR     : $SMS{$sm}{CASE_ERR}\n";
+   print "      INC          : $SMS{$sm}{INC}\n";
+
+   print "\n      STATE LIST:\n";
+   while (($state,$x)=  each %{$SMS{$sm}{STATE_LIST}})
+   {
+      print "         $state\n";
+   }
+
+   print "\n      EVENT LIST:\n";
+   foreach $event (keys %{$SMS{$sm}{EVENT_LIST}})
+   {
+      print "         $event\n";
+   }
+
+   print "\n      ACTION LIST:\n";
+   foreach $action (keys %{$SMS{$sm}{ACTION_LIST}})
+   {
+      print "         $action\n";
+   }
+
+   print "\n      TIMER LIST:\n";
+   foreach $timer (keys %{$SMS{$sm}{TIMER_LIST}})
+   {
+      print "         $timer\n";
+   }
+
+   print "\n      TIMER ACTION LIST:\n";
+   foreach $timer (keys %{$SMS{$sm}{TIMER_ACTION_LIST}})
+   {
+      print "         $timer\n";
+   }
+
+   print "\n      STATES:";
+   foreach $state (keys %{$SMS{$sm}{STATES}})
+   {
+      print "\n         STATE: $state\n";
+      print "            IN_LIST= $SMS{$sm}{$state}{IN_LIST}\n";
+      foreach $transition (@{$SMS{$sm}{STATES}{$state}})
+      {
+         print "            TRANSITION:\n";
+         print "               NEXT    = ", $$transition{NEXT}, "\n";
+         print "               ON      = ", $$transition{ON}, "\n";
+         print "               DO_LIST:\n";
+         foreach $do (@{$$transition{DO_LIST}}) {
+         print "                         $do\n"; 
+         }
+      } 
+   }
+
+   print "\n      PERIODS:\n";
+   foreach $timer (keys %{$SMS{$sm}{PERIODS}})
+   {
+      print "         TIMER: $timer\n";
+      print "            MSECS: $SMS{$sm}{PERIODS}{$timer}{MSECS}\n";
+   }
+
+}# dump_sm_entry
+
+</PRE><P>
+
+
+<P><HR><A NAME="bugs"></A>
+<H2> Bugs </H2>
+
+<UL>
+<LI> The error handling is currently very lame.
+<LI> The parser/driver interface may be better as objects.
+</UL>
+<P>
+
+
+<P><HR><A NAME="todo"></A>
+<H2> Todo </H2>
+<UL>
+<LI> Handle multiple state machines. 
+<LI> make driver interface an object rather than an anonymous hash
+<LI> make all attribute parsing use common code. Need to pass
+     associative array elements by reference. 
+<LI> create a new specification syntax
+</UL>
+
+<P><HR>
+<CENTER>
+<H5>Last Update: 1999-03-07</H5>
+</CENTER>
