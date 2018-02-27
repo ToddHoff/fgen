@@ -1,21 +1,128 @@
-#======================================================================
+#==============================================================================
 #
 # Makefile          : Jamfile
 #
-# Description       : Interior directory Jamfile used to descend
-#                     the development tree.
-#======================================================================
+# Description       : Leaf directory Jamfile used to build object and
+#                     library files.
+#
+# Revision History  :
+#   06 Jul 98   M. Dowdy       Created
+#
+#==============================================================================
 
 include $(WA_ROOT)$(SLASH)tools$(SLASH)jamInclude$(SLASH)Jamrules ;
 
-#======================================================================
-#                  Generate C++ class documentation
-#======================================================================
-LnGenDoc Ssm ;
+#===========================================================================
+# Set default LIB_BASE, OS_ARCH, TARGET_OS and TARGET_ARCH variable values.
+#===========================================================================
+LnInit $(JAMPATH) ;
+
+
+#============================================================
+# Override default library and target variables if necessary
+#============================================================
+#LIB_BASE = foo ;
+
+
+#===============================
+# Developer supplied debug mode
+#===============================
+#-- debug mode --#
+#DEBUG         = on ;                    # Set this variable to "on" to
+                                        # include developer supplied
+                                        # debug code.  This value may
+                                        # be set from the command line
+                                        # using:
+                                        #  $ jam -sDEBUG=on
+#====================
+# Optimization Level
+#====================
+#OPT = 0 ;                               # This numeric value is used
+                                        # to set the optimization level.
+                                        # If this value is not set,
+                                        # optimization is turned off
+                                        # for debugger builds and is
+                                        # turned on for release builds.
+                                        # The gcc compiler supports values
+                                        # from 0 (no optimization) to 3
+                                        # (maximum optimization).  This
+                                        # value may be set from the command
+                                        # line using:
+                                        #  jam -sOPT=
+#========================
+# Purify instrumentation
+#========================
+#PURIFY = on ;                           # Set this variable to "on" to
+                                        # enable Purify instrumentation.
+                                        # This value may be set from the
+                                        # command line using:
+                                        #  $ jam -sPURIFY=on
+#===================================
+# Generation of profile information
+#===================================
+#PROFILE = on ;                          # Set this variable to "on" to
+                                        # generate profile information.
+                                        # This value may be set from the
+                                        # command line using:
+                                        #  $ jam -sPROFILE=on
+
+#------------------------------------------------------------------------------
+# Create the source module list
+#  The variable to the left of the colon in the LnMkSrcs rule will contain
+#  a list of source files in the current directory and the parent directory.
+#  If any sources (i.e. *.asm, *.c, *.cpp, *.s) from either of these
+#  directories should not be included in the build for this subsystem,
+#  place the names of the files to excluded to the right of the colon.
+#  Note that files in the exclude list must contain a path if they are in
+#  the parent directory (i.e. ..\\foo.cpp).
+#
+#     LnMkSrcs SRCS : excludeMe.cpp ..\\excludeMe2.cpp ;
+#-------------------------------------------------------------------------------
+LnMkSrcs SRCS ;
+
+#---------------------------------------------------
+#  Include file paths required for this subsystem
+#---------------------------------------------------
+SUBDIRHDRS = $(JAMPATH:D) ;
+
+
+#---------------------------------------------------
+#  C compilation flags required for this subsystem
+#---------------------------------------------------
+SUBDIRCCFLAGS = ;
+
+
+#---------------------------------------------------
+# C++ compilation flags required for this subsystem
+#---------------------------------------------------
+SUBDIRC++FLAGS = ;
+
+
+#---------------------------------------------------
+#    Assembler flags required for this subsystem
+#---------------------------------------------------
+SUBDIRASFLAGS = ;
+
+
+#===================================================
+#              Main Target Definition
+#===================================================
+
+#-------------------
+#  Release library
+#-------------------
+DEBUGGER = off ;
+LnLibrary $(LIB_BASE) : $(SRCS) ;
+
+#------------------
+#   Debug library
+#------------------
+DEBUGGER = on ;
+LnLibrary $(LIB_BASE) : $(SRCS) ;
 
 
 #======================================================================
-#                Descend the tree looking for Jamfiles
+#     Descend the tree looking for directories containing Jamfiles
 #======================================================================
 
 LnDescend $(JAMPATH) ;
