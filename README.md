@@ -88,17 +88,10 @@ and parsers.
 <A NAME="setup"></A>
 <H2> Setup </H2>
 
-<H3>Getting fgen</H3>
-
-Fgen is in <A HREF="../../../HomePages/Tools/index.html">Perforce</A> 
-in directory <B>//depot/main/sw/tools/fgen</B>. To use fgen you must 
-first sync fgen into your workarea.
-<P>
-
 <H3>Install Perl</H3>
 
 Fgen is a perl script which requires Perl5 to be installed
-on your system. Perl5 is located in directory <B>\\Lightera1\Apps</B>.
+on your system. 
 <P>
 
 <H3>Path Setup</H3>
