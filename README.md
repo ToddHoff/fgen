@@ -1,12 +1,7 @@
 # fgen
 
 
-<HTML>
 
-<HEAD>
-<TITLE> fgen- generate framework code from system specifications</TITLE>
-</HEAD>
-<BODY BGCOLOR="skyblue">
 
 <CENTER>
    <H1> fgen </H1>
