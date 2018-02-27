@@ -1695,15 +1695,6 @@ Its in the action methods that the behaviour of the state machine
 is coded.
 
 
-<A NAME="smexample"></A>
-<H2> State Machine and Agent Example </H2>
-
-A combined agent and state machine example is provided
-in the 
-<A HREF="http://LighteraNet/HomePages/Software/Infrastructure/Com.html#example_agent">Com</A> documentation.
-<P>
-
-
 <P><HR><A NAME="bugs"></A>
 <H2> Bugs </H2>
 
