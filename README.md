@@ -1,10 +1,5 @@
 # fgen
-
-
-
-
 <CENTER>
-   <H1> fgen </H1>
    <H2> Generate Framework Code from System Specifications </H2>
 </CENTER>
 
