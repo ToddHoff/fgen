@@ -1,0 +1,21 @@
+#======================================================================
+#
+# Makefile          : Jamfile
+#
+# Description       : Interior directory Jamfile used to descend
+#                     the development tree.
+#======================================================================
+
+include $(WA_ROOT)$(SLASH)tools$(SLASH)jamInclude$(SLASH)Jamrules ;
+
+#======================================================================
+#                  Generate C++ class documentation
+#======================================================================
+LnGenDoc Ssm ;
+
+
+#======================================================================
+#                Descend the tree looking for Jamfiles
+#======================================================================
+
+LnDescend $(JAMPATH) ;

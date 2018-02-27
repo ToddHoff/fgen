@@ -1,0 +1,554 @@
+/**@pkg [NULL] */
+
+/**
+ * Ssm stands for synchronized state machines. It implements a
+ * distributed dependency service for driving and coordinating 
+ * distributed state machines. 
+ *
+ * <H2> Contents </H2>
+ *
+ * <OL>
+ * <LI> <A HREF="#overview"> Overview </A>
+ * <LI> <A HREF="#gensm">    Simple Generic State Machine Model </A>
+ * <LI> <A HREF="#cond">     Conditions Trigger State Machine Event Notification </A>
+ * <LI> <A HREF="#coord">    Coordinator Distributes Events and Checks Conditions </A>
+ * <LI> <A HREF="#context">  State Machine Actions in the Right Thread Context
+ * <LI> <A HREF="#order">    Importance Subscription and Publication Ordering
+ * <LI> <A HREF="#syncex">   Sync State Machine Example </A>
+ * </OL>
+ *
+ *
+ * <A NAME="overview">
+ * <H2> Overview </H2>
+ *
+ * The problem Ssm solves is:
+ * <OL>
+ * <LI> The coordination of state machines that are distributed and loosely
+ *      coupled. The idea is its simpler to coordinate state machines
+ *      using a dependency mechanism when compared to using another 
+ *      state machine.
+ * <LI> The central administration of defining dependencies between state
+ *      machines.
+ * </OL>
+ *
+ * The basic approach is to first define a
+ * <A HREF="gensm"> generic state machine</A> model that hides the internal 
+ * complexity of state machines. Once state machines are generically
+ * manipulatable there needs to be a way to specify 
+ * <A HREF="#cond">dependencies</A> between state machines. Lastly, there needs 
+ * to be a <A HREF="#coord">coordinator</A> running on each node to 
+ * implement the dependency detection and handling.
+ *
+ * Dependencies are specified in the form of one or more conditions 
+ * that when
+ * satisfied send an event to another state machine. Currently all
+ * conditions are defined as state machines reaching specific states.  More
+ * types of conditions can be added as needed. When all conditions
+ * are satisifed a named event is sent as input to a named state machine.
+ * Every state machine has a globally unique name.
+ * The event drives the state machine to a new state. The new state
+ * of the state machine could inturn satisfy other dependencies and
+ * cause other state machines to execute. Taken together the 
+ * dependency list can coordinate a distributed set of state machines.
+ *
+ * Take for example application A1 that should only download data
+ * from application A2 when applications A2, A3, and A4 all are
+ * in state "SYNCED." What state SYNCED means is irrelevant to the Ssm
+ * coordinator. All the coordinator needs is: a way to tell if A2, A3,
+ * and A4 are sync'ed state; and a way to tell A1 to download. 
+ * The coordinator does not need to know what any of this means, it
+ * only needs to be able to tell others what to do. Based on these
+ * capabilities it's possible to build a general state machine dependency system.
+ *
+ *
+ * <A NAME="gensm">
+ * <H2> Simple Generic State Machine Model </H2>
+ *
+ * The generic state machine is specified in the base class <B>SsmSmBase</B>.
+ * State machines using Ssm must derived from this class and 
+ * implement its interface.
+ *
+ * From Ssm's point-of-view a state machine:
+ * <OL>
+ * <LI> Has a globally unique name.
+ * <LI> Accepts events. It's up to the state machine to
+ *      interpret the event and do the "right thing."
+ * <LI> Has a current state.
+ * <LI> Notifies listerners (local, not distributed) of state changes.
+ * </OL>
+ *
+ * The coordinator only knows state machines at this simple level. 
+ * The state machines, of course, can be much more complicated internally.
+ * Only developers need know the internal details of the
+ * state machines when setting up dependencies.
+ *
+ *
+ * <A NAME="cond">
+ * <H2> Conditions Trigger State Machine Event Notification   </H2>
+ *
+ * State machines describe the event they want to receive when a certain
+ * set of conditions becomes true. Coordinators are given the
+ * list on creation and are responsible implementing the 
+ * dependencies on their nodes. Dependencies are described using a
+ * a properties string. The properties structure is:
+ * <OL>
+ * <LI> <B>SsmDefinition</B>  Property Type<BR>
+ *
+ *      The entire properties object defining state machine dependencies must
+ *      have the type <B>SsmDefinition</B>. The properties name
+ *      can be anything.
+ *
+ * <LI> <B>DependencyDefinition</B>  Property Type<BR>
+ *
+ *      SsmDefinition is made of DependencyDefinition 
+ *      properties. There should be one per dependency.
+ *      A DependencyDefinition consists of a properties
+ *      named <B>actions</B> and a properties named
+ *      <B>conditions</B>. A string property named 
+ *      <B>description</B> is available to describe the
+ *      dependency.
+ *
+ * <LI> <B>runlocation</B> Section<BR>
+ *
+ *      This section defines where the dependency should execute.
+ *      Theoretically a dependency could run anywhere as all
+ *      communication is through Com. Practically speaking we
+ *      want dependencies to run in specific locations.
+ *
+ *      Currently the only way to specify a location is to
+ *      say a dependency should run where a specific state
+ *      machine runs. This specification has properties type
+ *      <B>BySmLocation</B>.
+ *
+ * <LI> <B>BySmLocation</B> Property Type <BR>
+ *
+ *      BySmLocation associates a dependency with a state machine
+ *      for the purpose of specifying where a dependency should run.
+ *      A coordinator whill run a dependency if the specified
+ *      state machine is registered with the coordinator.
+ *
+ * <LI> <B>actions</B> Section<BR>
+ *
+ *      Actions is an array of properties describing what
+ *      actions to take when a set of conditions is satisfied.
+ *      The actions will be executed in index order. Currently
+ *      the only supported action type is <B>SendSmEvent</B>.
+ *
+ * <LI> <B>startactions</B> Section<BR>
+ *
+ *      Startactions is an array of properties describing 
+ *      actions to fire when a dependency first "comes up."
+ *      This allows kick starting the ssm without a particular
+ *      ssm having to hard code in startup logic.
+ *      The actions will be executed in index order. Currently
+ *      the only supported action type is <B>SendSmEvent</B>.
+ *
+ * <LI> <B>SendSmEvent</B> Property Type <BR>
+ *
+ *      SendSmEvent is action that sends a named state machine event to a
+ *      state machine. The state machine to send to is specified in string
+ *      attribute <B>sm</B>.  The event to send to is specified in 
+ *      string attribute <B>event</B>.
+ *
+ * <LI> <B>conditions</B> Section<BR>
+ *
+ *      Conditions is an array of properties describing the
+ *      conditions necessary to trigger the action list. 
+ *      Currently the only supported condition type is <B>SmCondition</B>.
+ *      A SmCondition is true when the specified state machine enters a specified
+ *      state. The state machine is specified by string attribute <B>sm</B>.
+ *      The state is specified by string attribute <B>state</B>.
+ *      <P>
+ *      String attribute ResolvePolicy controls if the condition's initial condition
+ *      is determined when the state machine "goes live". By default the initial
+ *      condition is determined. If ResolvePolicy is set to "NoInitial" then
+ *      then the initial condition of the condition is not determined. This feature
+ *      can be useful in certain dependency relationships.
+ * </OL>
+ *
+ * For example:
+ *
+ * <A NAME="rules"> 
+ * <H3> Condition Rules Description </H3>
+ * <PRE>
+ * &lt;PROPS NAME="TxnSsms" TYPE="SsmDefinition">
+ *
+ *   &lt;PROPS NAME="CacLogLineSync" TYPE="DependencyDefinition">
+ *      &lt;STRING NAME="description"> Dependency between Cac
+ *         and physical lines.
+ *      &lt;/STRING>
+ *
+ *      &lt;PROPS NAME="runlocation" TYPE="BySmLocation">
+ *            &lt;STRING NAME="sm">CacLogLinesSm</STRING>
+ *      &lt;/PROPS>
+ *
+ *      &lt;PROPS NAME="startactions">
+ *         &lt;PROPS NAME="0" TYPE="SendSmEvent">
+ *            &lt;STRING NAME="sm">PsSm</STRING>
+ *            &lt;STRING NAME="event">StartSyncing</STRING>
+ *         &lt;/PROPS>
+ *      &lt;/PROPS>
+ *
+ *      &lt;PROPS NAME="actions">
+ *         &lt;PROPS NAME="0" TYPE="SendSmEvent">
+ *            &lt;STRING NAME="sm">CacLogLinesSm</STRING>
+ *            &lt;STRING NAME="event">StartSyncing</STRING>
+ *         &lt;/PROPS>
+ *      &lt;/PROPS>
+ *
+ *      &lt;PROPS NAME="conditions">
+ *         &lt;PROPS NAME="0" TYPE="SmCondition">
+ *            &lt;STRING NAME="sm">LsPhyLinesSm</STRING>
+ *            &lt;STRING NAME="state">Synced</STRING>     
+ *            &lt;STRING NAME="ResolvePolicy">NoInitial</STRING>        
+ *         &lt;/PROPS>
+ *      &lt;/PROPS>
+ *
+ *   &lt;/PROPS>
+ *
+ * &lt;/PROPS>
+ * </PRE>
+ *
+ *
+ * <A NAME="coord">
+ * <H2> Coordinator Distributes Events and Checks Conditions </H2>
+ *
+ * The coordinator is implemented in class <B>SsmCoordinatorActor</B>. The
+ * singleton for the coordinator is available through  <B>SsmCoordinatorService</B>.
+ * A coordinator will run on each node using the coordinator service.
+ *
+ * The coordinator reads in any dependency rules it is passed. From the
+ * rule desription it builds up all the machinery it needs to act as a 
+ * coordinator.
+ *
+ * State machines must register with the coordinator to receive coordination service.
+ * Method SsmCoordinatorActor::Register is used to register with the coordinator.
+ * Because every state machine has a name, the coordinator can use the state machine name to
+ * know about which dependency rules it needs to pay attention to. Whith
+ * this strategy every coordinator can share one dependency description,
+ * yet only have to do the work for the state machine that have registered with it.
+ *
+ * The coordinator registers operations in the Com name space for each state machine.
+ * This is how coordinators communicate information to each other about the
+ * state machines they are coordinating.
+ *
+ * Each state machine is listenable, meaning any other local object can
+ * register for its state changes. A coordinator registers as a listener
+ * for each state machine that registers with it. When the state machine 
+ * moves to a new state the coordinator
+ * is notified of the change via the listener interface. The coordinator
+ * will publish state machine changes using Com. Any other coordinator
+ * caring about that state machine will have registered for the state machine's
+ * state changes.
+ *
+ * When a state machine change event is received by a coordinator, it 
+ * causes the coordinator to check all conditions depending on that state machine 
+ * changing state. If all conditions are found to be true then the actions 
+ * associated with the condition are executed. The coordinator remembers
+ * the current state of all state machines it's interested in, which should make
+ * condition evaluation efficient.
+ *
+ *
+ * <H3> SsmSmBase Class </H3>
+ *
+ * All state machines must derive from SsmSmBase and implement its interface.
+ * Events are distributed to state machines (using SsmSmBase::SsmEvent) in the
+ * coordinators thread. SsmEvent must be implemented to drive the
+ * state machine from this single event input source. This is not to
+ * say the state machine can't also be driven via other means, but
+ * SsmEvent must be able to turn an event string into a "real"
+ * event in the state machine.
+ *
+ * State machines <B>must</B> not implement state machine actions
+ * in the coordinators thread. This would block the entire state machine. 
+ * State machines should perform actions in their own thread context.
+ *
+ * <H3> Registration/Activation Life Cycle </H3>
+ *
+ * The coordinator should have all its state machines register before it
+ * starts actively managing dependencies. All state machines can register with
+ * the coordinator during system state initializing. All state machines must register 
+ * with the coordinator using method SsmCoordinatorActor::Register. The coordinator
+ * will only start actively managing dependencies when the coordinator
+ * is move to system state PRIMARY. 
+ *
+ * When it the coordinator first moves to primary it will evaluate all 
+ * its conditions so it will pickup any actions that should fire. After
+ * it's in primary it will only check conditions when events are received.
+ *
+ * 
+ * <A NAME="context">
+ * <H2> State Machine Actions in the Right Thread Context </H2>
+ *
+ * As a baseline it should be remembered events drive state machines.
+ * An event can trigger any number and mix of actions.
+ *
+ * Getting state machine actions to be executed in the correct thread
+ * context is not easy. State machine events are called in the
+ * thread of the Ssm coordinator. Somehow events must be
+ * queued to a designated thread context and executed in that context
+ * consistently. 
+ *
+ * Two options are:
+ *
+ * <OL>
+ * <LI> <B> Implement SsmSmBase Directly </B></BR>
+ *
+ * An object can implement SsmSmBase directly. In this case the object
+ * must implement the state machine, take care of all state transitions,
+ * and make sure  actions occur in a thread other than the coordinator.
+ * This is a lot of work, but can be done. 
+ * <P>
+ *
+ * <LI> <B> Use Fgen Generated State Machines Combined with SsmSmBase </B></BR>
+ *
+ * The state machine generator <A HREF="../../tools/fgen/fgen.html">fgen</A> 
+ * is very useful for generating state machines from a simple specification.
+ * Fgen state machines can also be told to generate code that allows events
+ * to be queued up for execution in another thread. A very handy feature.
+ *
+ * The strategy here is to define a state machine using fgen and generate
+ * the state machine class. Another class derives from both SsmSmBase
+ * and the base state machine class. The new class acts as a mapper
+ * between SsmSmBase and the base state machine class. It also acts
+ * to forward events from the coordinator, in the form of Action objects,
+ * to a thread context, usually an Actor.
+ *
+ * Queueing events to an Actor allows all actions 
+ * implemented by the state machine to be automatically executed in the 
+ * correct thread context.
+ * </OL>
+ *
+ *
+ * <A NAME="order">
+ * <H2> Importance Subscription and Publication Ordering </H2>
+ *
+ * The order in which the coordinator performs publications and subscriptions
+ * has a lot to do with system reliability in startup and failure scenarios. 
+ * There are very subtle problems that occurr when all subscriptions 
+ * for a coordinator are not registered with the name server before the
+ * initial start action is activated. The start action may kick-off a 
+ * whole series of events that will fail because publishers and subscribers
+ * haven't been hooked up yet. 
+ *
+ * To prevent the above problems:
+ * <OL>
+ * <LI> 
+ * A coordinator should be last module to started in primary state. This 
+ * allows all the
+ * state machines to register with the coordinator before the coordinator
+ * becomes primary. This is important because it means the coordinator
+ * knows all the subscriptions for all its conditions. 
+ * A state machine registering after the coordinator is in primary state 
+ * will not get the same reliability as those registering before.
+ * <P>
+ *
+ * <LI> 
+ * On entry to primary state a coordinator registers each state machine's
+ * set and get operations the name space. It also registers each state 
+ * machine's state change event.
+ * <P>
+ *
+ * <LI> 
+ * A coordinator does not activate start actions until all subscriptions
+ * have been acknowledged from Com. This means the publishers and subscribers
+ * should have been able to match up, which means events resulting from 
+ * the start action should not be dropped.
+ * <P>
+ * </OL>
+ *
+ * <A NAME="syncex">
+ * <H2> Sync State Machine Example </H2>
+ *
+ * This example shows:
+ * <OL>
+ * <LI> <B>SyncSm</B><BR>
+ *
+ * SyncSm shows how to combine the Ssm base class SsmSmBase and a state machine
+ * generated using fgen (SyncSmBase).
+ * <P>
+ * <LI> <B>Implementation of SyncSm</B><BR>
+ *  
+ * The test suite for Ssm shows TestSyncSm, a simple implementation of SyncSm.
+ * The test suite is located under <A HREF="../../test/component/Ssm">
+ * /branch/sw/test/component/Ssf</A>.
+ * </OL>
+ *
+ *
+ * <H3> Overview </H3>
+ *
+ * A very common relationship between applications is for applications to 
+ * need to sync data from each other in some orderly fashion. Application
+ * A1, for example could only sync from application A2 has synced from its
+ * data source application A3.
+ *
+ *
+ * <H3> Sync State Machine </H3>
+ *
+ * Our first task is to define a state machine for syncing. The state machine
+ * generator <A HREF="../../tools/fgen/fgen.html">fgen</A> is very useful
+ * for this purpose. The state
+ * machine is simple, having three states: OUT_OF_SYNC, SYNCING, and SYNCED:
+ * <PRE>
+ * The state machine can be found in file Sync.sm:
+ *
+ * SM SyncSmBase
+ *    DOC               This is the base class for all Sync state machines.
+ *    START             OUT_OF_SYNC
+ *    GEN_AS_STRING     1
+ *    GEN_EFORWARDER    1
+ *    GEN_NOTIFY_CALL   1
+ *    DO_DOC            MoveSyncing Application classes must implement this \
+ *                      method with the real MoveSyncing behaviour.
+ * 
+ * IN OUT_OF_SYNC   
+ *    NEXT SYNCING      ON StartSyncing
+ *    NEXT SYNCED       ON DoneSyncing
+ * 
+ * IN SYNCING
+ *    ON_ENTRY                            DO MoveSyncing
+ *    NEXT SYNCING       ON StartSyncing
+ *    NEXT SYNCED        ON DoneSyncing
+ * 
+ * IN SYNCED
+ *    NEXT SYNCING       ON StartSyncing
+ *    NEXT SYNCED        ON DoneSyncing
+ </PRE>
+ *
+ * The "SM SyncSm" block defines characteristics general to the state machine
+ * as a whole. The line "START OUT_OF_SYNC" means the state machine will
+ * start in state OUT_OF_SYNC." Each "IN" block is state transition.
+ * The first IN block for state OUT_OF_SYNC reads something like:
+ * <PRE>
+ * IN OUT_OF_SYNC                   --> 
+ *    When in state OUT_OF_SYNC...
+ * NEXT SYNCING  ON StartSyncing    --> 
+ *    Move to state SYNCING when event StartSyncing is called.
+ * NEXT SYNCED       ON DoneSyncing -->
+ *    Move to state SYNCED when event DoneSyncing is called.
+ *
+ * The second IN block for state SYNCING reads something like:
+ * IN SYNCING                       -->
+ *    When in state SYNCING...
+ * ON_ENTRY DO MoveSyncing          -->
+ *    Everytime we enter state SYNCING call the method MoveSyncing. 
+ *    MoveSyncing is created as a pure virtual method and must be
+ *    overriden by derived class to implement "MoveSyncing" behaviour.
+ *    All DO clauses are state machine actions.
+ * NEXT SYNCING  ON StartSyncing    --> 
+ *    Move to state SYNCING when event StartSyncing is called.
+ * NEXT SYNCED       ON DoneSyncing -->
+ *    Move to state SYNCED when event DoneSyncing is called.
+ * </PRE>
+ *
+ * <H3> Generated State Machine Class </H3>
+ *
+ * Fgen from the above state machine definition will produce files
+ * SyncSmBase.h and SyncSmBase.cpp implementing the state machine.
+ * The state machine must be specialized by a derived class. State machine
+ * actions must be implemented by a derived class. For example, the MoveSyncing
+ * method must be implemented by a derived class to implement the
+ * state machine's "move to syncing" behaviour.
+ *
+ * The state machine has other virtual functions that must be implemented.
+ * The directive "GEN_NOTIFY_CALL   1" causes a method SmChangedEvent to be
+ * generated. It is called whenever a state machine changes state. A derived
+ * class can implement SmChangedEvent, for example, to call 
+ * NotifyObserver so that a general list of listeners would know the state
+ * machine changed state. This is how the coordinator know a state machine
+ * changed state. 
+ *
+ * The directive "GEN_EFORWARDER    1" creates a method in the state machine
+ * called FwdEvent that is responsible for forwarding an event call to a thread
+ * context where the event should be executed. 
+ *
+ *
+ * <H3> Creating SyncSm as a Synthetic State Machine Class </H3>
+ *
+ * A third class, SyncSm, must be derived from both class SsmSmBase and 
+ * class SyncSmBase in order to map method invocations between each other.
+ * For example, the SsmSmBase::SsmEvent must be turned into a call to
+ * SyncSmBase::InjectEvent. This class must also handle forwarding events
+ * to a task context. 
+ *
+ *
+ * <H3> The Fgen Strategy </H3>
+ *
+ * The strategy to get events queued to the correct thread has several parts:
+ * <OL>
+ * <LI> Encapusulating event invocations as Action objects.
+ * <LI> Queuing events to a MsgHandler.
+ * <LI> Make the Sync state machine to trigger events as
+ *      Action objects.
+ * </OL>
+ *
+ * An Action object has one method called Doit which performs an
+ * action when called. The idea is that event invocations 
+ * are wrapped in an Action object. When the Doit method is called
+ * it will really call the correct event method on a state machine.
+ * That event inturn triggers all the actions associated with the
+ * event in the current state.
+ *
+ * When the Ssm coordinator has an event for a state machine it calls
+ * SsmEvent with the name of the event to trigger. The SyncSmBase
+ * state machine has a method called InjectEvent which triggers an event,
+ * by event name, in the sync state machine. SyncSm maps SsmEvent to 
+ * InjectEvent.
+ *
+ * InjectEvent creates an Action object and calls FwdEvent to forward 
+ * the action object to a thread context other than the caller.
+ * SyncSm implements FwdEvent and calls a message handler object with
+ * the Action object. SyncSm is constructed with a reference to
+ * a MsgHandler object. The MsgHandler is supposed to queue up the
+ * Action object and call its Doit method in its thread context.
+ * Actor are MsgHandler objects that automatically executes Action
+ * object actions in the Actor's thread. Actor's work very nicely
+ * with Ssm state machines and should be the class of choice when
+ * constructing thread contexts.
+ *
+ * When the Action object's action is executed what it really does
+ * is invoke the state machine's event. What happens because of the
+ * event depends on the state machine and its current state. What
+ * is key is that all state machine actions triggered by the event
+ * are executed in the context of the MsgHandler.
+ *
+ * The flow is very clean when using an Actor as a MsgHandler:
+ * <OL>
+ * <LI> The Ssm coordinater calls SsmEvent;
+ * <LI> which causes SyncSm to call InjectEvent;
+ * <LI> which causes SyncSmBase::InjectEvent to create an Action object
+ *      and call FwdEvent with it;
+ * <LI> SyncSm has implemented FwdEvent to call the passed MsgHandler, which
+ *      is an Actor in this example;
+ * <LI> the Actor sees that it has an Action and invokes the Actor's Doit method;
+ * <LI> invoking the Action's Doit method causes SyncSmBase's state machine event
+ *      method to be called;
+ * <LI> which triggers state machine actions, implemented by a class derived
+ *      from SyncSm, to be called in the Actor's thread.
+ * </OL>
+ *
+ *
+ * <H3> Developers Implement SyncSm </H3>
+ *
+ * From a developers perspective SyncSm is very simple. All a developer needs
+ * to do is derive from SyncSm, implement the state machine actions, 
+ * make the new derived class part of an Actor so the state machine actions
+ * can be perfomed in the Actor's thread, and register with the Ssm coordinator.
+ * All the interaction with the Ssm coordinator and the state machine is
+ * handled by the framework.
+ *
+ * <H3> Issue Your Own Events </H3>
+ *
+ * The Ssm coordinator is not the only object that can issue events
+ * to a state machine. Events can be emitted by anyone. The available
+ * events can be found in the base fgen generated state machine class. 
+ * <B>DO NOT</B> call events directly, this could possible cause 
+ * multi-threading problems. Instead call <B>InjectEvent</B>, passing it the 
+ * name of the event. For example:  
+ * <PRE>
+ * InjectEvent("DoneSyncing");
+ * </PRE>
+ *
+ * @pkgdoc Ssm
+ */
+

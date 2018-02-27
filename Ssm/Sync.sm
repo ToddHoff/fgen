@@ -1,0 +1,45 @@
+# NAME:
+#   Sync.sm - state machine for syncing from one resource from 
+#   another
+#
+# SYNOPSIS:
+#   fgen.pl Sync.sm
+#
+# DESCRIPTION:
+#
+# SEE ALSO: fgen
+#
+# TYPE: SPECIFICATION
+#########################################################################
+
+CFG Sync State Machine
+   DEBUG            1
+   DRIVERS          lngen.pl
+   INC              "Project/LnTypes.h"
+   GEN_DEBUG        1
+
+
+SM SyncSmBase
+   DOC               This is the base class for all Sync state machines.
+   START             OUT_OF_SYNC
+   GEN_AS_STRING     1
+   GEN_EFORWARDER    1
+   GEN_NOTIFY_CALL   1
+   IS_MODULE         1
+   DO_DOC            MoveSyncing Application classes must implement this \
+                     method with the real MoveSyncing behaviour.
+
+IN OUT_OF_SYNC  
+   ON_ENTRY          DO MoveOutOfSync
+   NEXT SYNCING      ON StartSyncing
+
+IN SYNCING
+   ON_ENTRY           DO MoveSyncing
+   NEXT SYNCED        ON DoneSyncing
+   NEXT OUT_OF_SYNC   ON GoOutOfSync
+
+
+IN SYNCED
+   ON_ENTRY           DO MoveSynced
+   NEXT OUT_OF_SYNC   ON GoOutOfSync
+
